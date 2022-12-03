@@ -15,8 +15,9 @@
 
 package software.amazon.smithy.cli;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.Arrays;
-import java.util.function.Consumer;
 import java.util.logging.Logger;
 
 /**
@@ -31,14 +32,8 @@ import java.util.logging.Logger;
 public final class Cli {
 
     private static final Logger LOGGER = Logger.getLogger(Cli.class.getName());
-    private static CliPrinter deprecatedStdOut;
-
-    // Delegate to the stdout consumer by default since this can change.
-    private CliPrinter stdoutPrinter = new CliPrinter.ConsumerPrinter(str -> System.out.print(str));
-
-    // Don't use a method reference in case System.err is changed after initialization.
-    private CliPrinter stdErrPrinter = new CliPrinter.ConsumerPrinter(str -> System.err.print(str));
-
+    private CliPrinter stdout;
+    private CliPrinter stderr;
     private final ClassLoader classLoader;
     private final Command command;
 
@@ -51,11 +46,6 @@ public final class Cli {
     public Cli(Command command, ClassLoader classLoader) {
         this.command = command;
         this.classLoader = classLoader;
-
-        if (deprecatedStdOut != null) {
-            stdout(deprecatedStdOut);
-            stderr(deprecatedStdOut);
-        }
     }
 
     /**
@@ -70,45 +60,63 @@ public final class Cli {
         StandardOptions standardOptions = new StandardOptions();
         arguments.addReceiver(standardOptions);
 
-        // Use or disable ANSI escapes in the printers. Note that determining the color setting is deferred
-        // using a Supplier to allow the CLI parameters to be fully resolved.
-        CliPrinter out = new CliPrinter.ColorPrinter(stdoutPrinter, standardOptions::colorSetting);
-        CliPrinter err = new CliPrinter.ColorPrinter(stdErrPrinter, standardOptions::colorSetting);
+        if (stdout == null || stderr == null) {
+            Ansi ansi = Ansi.detect();
+            if (stdout == null) {
+                stdout(CliPrinter.fromOutputStream(ansi, System.out));
+            }
+            if (stderr == null) {
+                stderr(CliPrinter.fromOutputStream(ansi, System.err));
+            }
+        }
 
         // Setup logging after parsing all arguments.
         arguments.onComplete((opts, positional) -> {
-            LoggingUtil.configureLogging(opts.getReceiver(StandardOptions.class), err);
+            LoggingUtil.configureLogging(opts.getReceiver(StandardOptions.class), stderr);
             LOGGER.fine(() -> "Running CLI command: " + Arrays.toString(args));
         });
 
         try {
-            return command.execute(arguments, new Command.Env(out, err, classLoader));
-        } catch (Exception e) {
-            err.printException(e, standardOptions.stackTrace());
-            throw CliError.wrap(e);
-        } finally {
             try {
-                LoggingUtil.restoreLogging();
-            } catch (RuntimeException e) {
-                // Show the error, but don't fail the CLI since most invocations are one-time use.
-                err.println(err.style("Unable to restore logging to previous settings", Style.RED));
-                err.printException(e, standardOptions.stackTrace());
+                Command.Env env = new Command.Env(stdout, stderr, classLoader);
+                return command.execute(arguments, env);
+            } catch (Exception e) {
+                printException(e, standardOptions.stackTrace());
+                throw CliError.wrap(e);
+            } finally {
+                try {
+                    LoggingUtil.restoreLogging();
+                } catch (RuntimeException e) {
+                    // Show the error, but don't fail the CLI since most invocations are one-time use.
+                    printException(e, standardOptions.stackTrace());
+                }
             }
+        } finally {
+            stdout.flush();
+            stderr.flush();
         }
     }
 
-    public void stdout(CliPrinter printer) {
-        stdoutPrinter = printer;
+    public void stdout(CliPrinter stdout) {
+        this.stdout = stdout;
     }
 
-    public void stderr(CliPrinter printer) {
-        stdErrPrinter = printer;
+    public void stderr(CliPrinter stderr) {
+        this.stderr = stderr;
     }
 
-    // This method exists to offer compatibility with older Smithy Gradle plugins and silence
-    // their build warning messages. This method may be removed in the future. Use instance methods instead.
-    @Deprecated
-    public static void setStdout(Consumer<String> consumer) {
-        deprecatedStdOut = new CliPrinter.ConsumerPrinter(text -> consumer.accept(text.toString()));
+    private void printException(Throwable e, boolean stacktrace) {
+        if (!stacktrace) {
+            stderr.println(e.getMessage(), Style.RED);
+        } else {
+            try (CliPrinter.Buffer buffer = stderr.buffer()) {
+                StringWriter writer = new StringWriter();
+                e.printStackTrace(new PrintWriter(writer));
+                String result = writer.toString();
+                int positionOfName = result.indexOf(':');
+                buffer.print(result.substring(0, positionOfName), Style.RED, Style.UNDERLINE);
+                buffer.println(result.substring(positionOfName));
+            }
+        }
     }
 }

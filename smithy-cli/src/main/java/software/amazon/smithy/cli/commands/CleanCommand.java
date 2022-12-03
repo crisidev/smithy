@@ -23,7 +23,6 @@ import software.amazon.smithy.build.SmithyBuild;
 import software.amazon.smithy.build.model.SmithyBuildConfig;
 import software.amazon.smithy.cli.ArgumentReceiver;
 import software.amazon.smithy.cli.Arguments;
-import software.amazon.smithy.cli.ConfigOptions;
 import software.amazon.smithy.utils.IoUtils;
 import software.amazon.smithy.utils.ListUtils;
 

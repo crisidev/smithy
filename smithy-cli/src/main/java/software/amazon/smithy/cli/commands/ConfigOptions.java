@@ -13,7 +13,7 @@
  * permissions and limitations under the License.
  */
 
-package software.amazon.smithy.cli;
+package software.amazon.smithy.cli.commands;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -26,8 +26,10 @@ import java.util.function.Consumer;
 import java.util.logging.Logger;
 import software.amazon.smithy.build.SmithyBuild;
 import software.amazon.smithy.build.model.SmithyBuildConfig;
+import software.amazon.smithy.cli.ArgumentReceiver;
+import software.amazon.smithy.cli.HelpPrinter;
 
-public final class ConfigOptions implements ArgumentReceiver {
+final class ConfigOptions implements ArgumentReceiver {
 
     private static final Logger LOGGER = Logger.getLogger(ConfigOptions.class.getName());
     private final List<String> config = new ArrayList<>();
@@ -50,7 +52,7 @@ public final class ConfigOptions implements ArgumentReceiver {
         }
     }
 
-    public List<String> config() {
+    List<String> config() {
         List<String> config = this.config;
         if (config.isEmpty()) {
             Path defaultConfig = Paths.get("smithy-build.json").toAbsolutePath();
@@ -62,7 +64,7 @@ public final class ConfigOptions implements ArgumentReceiver {
         return config;
     }
 
-    public SmithyBuildConfig createSmithyBuildConfig() {
+    SmithyBuildConfig createSmithyBuildConfig() {
         long startTime = System.nanoTime();
         SmithyBuildConfig smithyBuildConfig;
         List<String> config = config();
